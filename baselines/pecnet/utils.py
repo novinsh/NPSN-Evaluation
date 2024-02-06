@@ -5,6 +5,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 from torch.utils.data.dataloader import DataLoader
+from scipy.spatial.distance import pdist, cdist
 
 
 def traj_collate_fn(data):
@@ -220,3 +221,24 @@ def calculate_loss(x, reconstructed_x, mean, log_var, criterion, future, interpo
     KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
     return RCL_dest, KLD, ADL_traj
+
+
+def energy_score_scipy(y, x, d=None):
+    """ calculate energy score based on cdist and pdist torch implementations """
+    n_samples = x.shape[0]
+    n_temporal = x.shape[2]
+    n_spatial = x.shape[3]
+    n_s = x.shape[1] 
+    assert y.shape[1] == n_temporal
+    assert y.shape[0] == n_s
+    assert y.shape[2] == n_spatial
+
+    es = np.empty((n_s,))#, device=y.get_device())
+    d = n_temporal * n_spatial if d is None else d
+    for s in range(n_s):
+        ed = cdist(x[:,s,:].reshape(n_samples,-1), y[s,:].reshape(1,-1), metric='minkowski', p=d)
+        ei = pdist(x[:,s,:].reshape(n_samples, -1), metric='minkowski', p=d)
+        adjust_factor = (n_samples-1) / n_samples # V statistic instead of U
+        es[s] = ed.mean() - 0.5 * adjust_factor * ei.mean()
+
+    return es

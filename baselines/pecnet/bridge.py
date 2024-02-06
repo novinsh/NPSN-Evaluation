@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from torch.utils.data.dataloader import DataLoader
 from .model import PECNet as PECNet
-from .utils import TrajectoryDataset, TrajBatchSampler, traj_collate_fn
+from .utils import TrajectoryDataset, TrajBatchSampler, traj_collate_fn, energy_score_scipy
 
 
 def get_dataloader(data_dir, phase, obs_len, pred_len, batch_size):
@@ -109,7 +109,24 @@ def model_forward_post_hook(model, all_dest_recon, mask, x, y, initial_pos, dest
     ADEs = np.mean(np.linalg.norm(y - predicted_future, axis=2), axis=1) / data_scale
     FDEs = np.min(all_l2_errors_dest, axis=0) / data_scale
     TCCs = tcc.detach().cpu().numpy()
-    return ADEs, FDEs, TCCs
+
+    # all guess predictions
+    predicted_futures = []
+    for guess_dest in all_guesses:
+        guess_dest = torch.FloatTensor(guess_dest).to(device)
+        interpolated_future = model.predict(x, guess_dest, mask, initial_pos)
+        interpolated_future = interpolated_future.cpu().numpy()
+        best_guess_dest_numpy = guess_dest.cpu().numpy()
+        predicted_future = np.concatenate((interpolated_future, best_guess_dest_numpy), axis=1)
+        predicted_future = np.reshape(predicted_future, (-1, 12, 2))  # making sure
+        predicted_futures.append(predicted_future)
+    predicted_futures = np.array(predicted_futures)
+    # print(predicted_futures.shape)
+    # print(y.shape)
+    #
+    ESs = energy_score_scipy(y/data_scale, predicted_futures/data_scale)
+
+    return ADEs, FDEs, TCCs, ESs
 
 
 def model_loss(all_guesses, y, loc):

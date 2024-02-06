@@ -64,6 +64,35 @@ def compute_batch_metric(pred, gt):
     return ADEs, FDEs, TCCs
 
 
+def energy_score_pytorch(y, x, d=None):
+    """ calculate energy score based on cdist and pdist torch implementations """
+    n_samples = x.shape[0]
+    n_temporal = x.shape[1]
+    n_spatial = x.shape[3]
+    n_s = x.shape[2] 
+    assert y.shape[0] == n_temporal
+    assert y.shape[1] == n_s
+    assert y.shape[2] == n_spatial
+
+    es = torch.empty((n_s,), device=y.get_device() if y.get_device() != -1 else 0)
+    d = n_temporal * n_spatial if d is None else d
+    for s in range(n_s):
+        ed = torch.cdist(x[:,:,s].reshape(n_samples,-1), y[:,s].reshape(1,-1), p=d)
+        ei = torch.pdist(x[:,:,s].reshape(n_samples, -1), p=d)
+        adjust_factor = (n_samples-1) / n_samples # V statistic instead of U
+        es[s] = ed.mean() - 0.5 * adjust_factor * ei.mean()
+
+    return es
+
+def compute_batch_metric_energy_score(pred, gt):
+    """Get ES score for each pedestrian"""
+    # print(gt.shape)
+    # print(pred.shape)
+    # print("#")
+    ESs = energy_score_pytorch(gt, pred)
+    # print(ESs.shape)
+    return ESs
+
 def evaluate_tcc(pred, gt):
     """Get ADE, FDE, TCC scores for each pedestrian"""
     pred, gt = torch.FloatTensor(pred).permute(1, 0, 2), torch.FloatTensor(gt).permute(1, 0, 2)
